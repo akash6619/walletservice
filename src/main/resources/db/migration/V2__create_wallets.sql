@@ -1,0 +1,7 @@
+CREATE TABLE wallets (
+    wallet_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL UNIQUE REFERENCES users(user_id),
+    balance_paise BIGINT NOT NULL DEFAULT 0 CHECK (balance_paise >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

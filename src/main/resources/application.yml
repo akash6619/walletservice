@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: wallet-service
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 0
+      connection-timeout: 2000
+      validation-timeout: 1000
+      idle-timeout: 60000
+      max-lifetime: 600000
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+wallet:
+  initial-balance-paise: ${INITIAL_BALANCE_PAISE}
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: wallet-service-demo
+    audience: wallet-service
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health,prometheus
+      path-mapping:
+        health: internal-health
+        prometheus: metrics
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+          additional-path: server:/healthz
+        readiness:
+          include: readinessState,db
+          additional-path: server:/readyz
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  structured:
+    format:
+      console: logstash
