@@ -11,7 +11,7 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 | 3 | HTTP API, authentication, and error handling | Completed (`7e224bd`) |
 | 4 | Observability and operational endpoints | Completed |
 | 5 | Concurrency verification and burst tooling | Completed |
-| 6 | Delivery automation and deployment readiness | Not started |
+| 6 | Delivery automation and deployment readiness | Completed |
 | 7 | Live deployment and final acceptance | Not started |
 
 ## Phase 1 — Project and persistence foundation
@@ -227,6 +227,14 @@ Review focus:
 - Secret handling.
 - CI and Render simplicity.
 - Scope control in documentation.
+
+Current result:
+
+- GitHub Actions runs the complete Maven verification suite, including PostgreSQL Testcontainers tests, for pushes to `main` and pull requests.
+- A Render Blueprint builds the checked-in Dockerfile on the Free plan, waits for CI checks, uses `/healthz`, and prompts for only the five approved deployment variables.
+- The README documents local operation, API calls, verification, Compose, Render/Supabase deployment, demo provisioning, private token generation, burst testing, and free-tier limitations.
+- Idempotent demo-user SQL creates no wallets, and a local token utility generates short-lived assessment JWTs without persisting secrets.
+- Maven verification, Compose validation, rebuilt container startup, non-root execution, operational endpoints, metrics, and the local burst test all pass.
 
 ## Phase 7 — Live deployment and final acceptance
 
