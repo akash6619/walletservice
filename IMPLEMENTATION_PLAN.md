@@ -10,7 +10,7 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 | 2 | Core domain and transactional persistence | Completed (`e8a9c3f`) |
 | 3 | HTTP API, authentication, and error handling | Completed (`7e224bd`) |
 | 4 | Observability and operational endpoints | Completed |
-| 5 | Concurrency verification and burst tooling | Not started |
+| 5 | Concurrency verification and burst tooling | Completed |
 | 6 | Delivery automation and deployment readiness | Not started |
 | 7 | Live deployment and final acceptance | Not started |
 
@@ -191,6 +191,13 @@ Review focus:
 - Whether tests reproduce the evaluator's stated gate.
 - Determinism and failure diagnostics.
 - Deadlock retry behavior without server-side retry loops.
+
+Current result:
+
+- Six PostgreSQL 17.6 Testcontainers tests exercise real Flyway migrations, concurrent first-use creation, identical-key replay, overspend prevention, conflict handling, participant authorization, and lock-timeout rollback/mapping.
+- Deadlock SQLSTATE mapping is covered separately and returns a retryable `503` without a server-side retry loop.
+- The executable burst script supports zero-configuration local Compose runs and explicit Render URL/token inputs, retries `503` with the same key, rejects `500` and inconsistent replay outcomes, and reconciles balances.
+- The full Maven verification gate passes with 33 tests; the focused concurrency suite also passed three consecutive runs.
 
 ## Phase 6 — Delivery automation and deployment readiness
 
