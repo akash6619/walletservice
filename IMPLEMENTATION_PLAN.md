@@ -7,8 +7,8 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Project and persistence foundation | Accepted; container runtime check deferred to Phase 6 |
-| 2 | Core domain and transactional persistence | Complete; awaiting review |
-| 3 | HTTP API, authentication, and error handling | Not started |
+| 2 | Core domain and transactional persistence | Accepted and committed (`e8a9c3f`) |
+| 3 | HTTP API, authentication, and error handling | Complete; awaiting review |
 | 4 | Observability and operational endpoints | Not started |
 | 5 | Concurrency verification and burst tooling | Not started |
 | 6 | Delivery automation and deployment readiness | Not started |
@@ -114,6 +114,14 @@ Review focus:
 - Authentication-to-caller mapping.
 - Information-leak prevention.
 - Separation among controller, DTO, mapper, service, model, and repository layers.
+
+Current result:
+
+- All four required account/transfer endpoints implemented with snake_case DTOs and manual mappers.
+- Stateless HS256 JWT validation enforces signature, issuer, audience, expiry, and UUID subject.
+- Spring Security derives caller identity exclusively from the authenticated token.
+- Domain, validation, authorization, database, and unexpected failures have centralized HTTP mappings.
+- Twenty unit/web/security tests pass; PostgreSQL-backed behavior remains scheduled for Phase 5.
 
 ## Phase 4 — Observability and operational endpoints
 
