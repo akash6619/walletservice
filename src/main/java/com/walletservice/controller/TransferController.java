@@ -7,6 +7,7 @@ import com.walletservice.exception.InsufficientFundsException;
 import com.walletservice.mapper.TransferMapper;
 import com.walletservice.model.TransferResult;
 import com.walletservice.model.TransferStatus;
+import com.walletservice.observability.BusinessObservability;
 import com.walletservice.security.AuthenticatedUser;
 import com.walletservice.service.TransferQueryService;
 import com.walletservice.service.TransferService;
@@ -28,10 +29,16 @@ public class TransferController {
 
     private final TransferService transferService;
     private final TransferQueryService transferQueryService;
+    private final BusinessObservability observability;
 
-    public TransferController(TransferService transferService, TransferQueryService transferQueryService) {
+    public TransferController(
+            TransferService transferService,
+            TransferQueryService transferQueryService,
+            BusinessObservability observability
+    ) {
         this.transferService = transferService;
         this.transferQueryService = transferQueryService;
+        this.observability = observability;
     }
 
     @PostMapping
@@ -45,6 +52,7 @@ public class TransferController {
                 request.amountPaise(),
                 request.idempotencyKey()
         );
+        observability.transferCompleted(result);
         if (result.status() == TransferStatus.REJECTED_INSUFFICIENT_FUNDS) {
             throw new InsufficientFundsException(result.transferId());
         }

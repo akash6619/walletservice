@@ -1,6 +1,7 @@
 package com.walletservice.exception;
 
 import com.walletservice.dto.ApiError;
+import com.walletservice.observability.BusinessObservability;
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +22,11 @@ import java.util.Set;
 public class ApiExceptionHandler {
 
     private static final Set<String> RETRYABLE_SQL_STATES = Set.of("40P01", "55P03", "57014");
+    private final BusinessObservability observability;
+
+    public ApiExceptionHandler(BusinessObservability observability) {
+        this.observability = observability;
+    }
 
     @ExceptionHandler(InvalidTransferException.class)
     ResponseEntity<ApiError> invalidTransfer(InvalidTransferException exception) {
@@ -39,6 +45,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(IdempotencyConflictException.class)
     ResponseEntity<ApiError> idempotencyConflict(IdempotencyConflictException exception) {
+        observability.idempotencyConflict();
         return error(HttpStatus.CONFLICT, "idempotency_conflict", exception.getMessage(), false);
     }
 
@@ -71,6 +78,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ApiError> databaseFailure(DataAccessException exception) {
         if (isRetryable(exception)) {
+            observability.retryableDatabaseFailure();
             HttpHeaders headers = new HttpHeaders();
             headers.set(HttpHeaders.RETRY_AFTER, "1");
             return new ResponseEntity<>(

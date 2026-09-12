@@ -2,6 +2,8 @@ package com.walletservice.controller;
 
 import com.walletservice.dto.AccountResponse;
 import com.walletservice.mapper.AccountMapper;
+import com.walletservice.model.AccountResult;
+import com.walletservice.observability.BusinessObservability;
 import com.walletservice.security.AuthenticatedUser;
 import com.walletservice.service.AccountService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,14 +18,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AccountController {
 
     private final AccountService accountService;
+    private final BusinessObservability observability;
 
-    public AccountController(AccountService accountService) {
+    public AccountController(AccountService accountService, BusinessObservability observability) {
         this.accountService = accountService;
+        this.observability = observability;
     }
 
     @PostMapping
     public AccountResponse getOrCreate(@AuthenticationPrincipal Jwt jwt) {
-        return AccountMapper.toResponse(accountService.getOrCreate(AuthenticatedUser.id(jwt)));
+        AccountResult result = accountService.getOrCreate(AuthenticatedUser.id(jwt));
+        observability.accountUpsert(result);
+        return AccountMapper.toResponse(result);
     }
 
     @GetMapping("/me")

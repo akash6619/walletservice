@@ -6,10 +6,10 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Project and persistence foundation | Accepted; container runtime check deferred to Phase 6 |
-| 2 | Core domain and transactional persistence | Accepted and committed (`e8a9c3f`) |
-| 3 | HTTP API, authentication, and error handling | Complete; awaiting review |
-| 4 | Observability and operational endpoints | Not started |
+| 1 | Project and persistence foundation | Completed |
+| 2 | Core domain and transactional persistence | Completed (`e8a9c3f`) |
+| 3 | HTTP API, authentication, and error handling | Completed (`7e224bd`) |
+| 4 | Observability and operational endpoints | Completed |
 | 5 | Concurrency verification and burst tooling | Not started |
 | 6 | Delivery automation and deployment readiness | Not started |
 | 7 | Live deployment and final acceptance | Not started |
@@ -38,7 +38,8 @@ Current result:
 
 - Maven build: passed.
 - Compose configuration validation: passed.
-- Container runtime verification: pending because the local Docker daemon is not running.
+- Container image and Compose runtime: passed with Java 21 app and PostgreSQL 17.6 containers healthy.
+- Flyway applied all three migrations; `/healthz`, `/readyz`, and `/metrics` returned `200`.
 
 Review focus:
 
@@ -121,7 +122,7 @@ Current result:
 - Stateless HS256 JWT validation enforces signature, issuer, audience, expiry, and UUID subject.
 - Spring Security derives caller identity exclusively from the authenticated token.
 - Domain, validation, authorization, database, and unexpected failures have centralized HTTP mappings.
-- Twenty unit/web/security tests pass; PostgreSQL-backed behavior remains scheduled for Phase 5.
+- Twenty-two unit/web/security tests pass; PostgreSQL-backed behavior remains scheduled for Phase 5.
 
 ## Phase 4 — Observability and operational endpoints
 
@@ -152,6 +153,14 @@ Review focus:
 - Correct post-commit event timing.
 - Operational endpoint exposure.
 - Metric names and label cardinality.
+
+Current result:
+
+- Every request receives a new server-generated correlation UUID in MDC and `X-Correlation-ID`.
+- Structured request, authentication, database, wallet, and transfer events contain no business identifiers or secrets.
+- Low-cardinality HTTP duration/count, transfer outcome, and wallet upsert metrics are emitted through `/metrics`.
+- Actuator exposes only public `/healthz`, `/readyz`, and `/metrics`; readiness includes PostgreSQL while liveness does not.
+- Twenty-six unit/web/security/observability tests pass; database-outage behavior remains part of PostgreSQL verification.
 
 ## Phase 5 — Concurrency verification and burst tooling
 

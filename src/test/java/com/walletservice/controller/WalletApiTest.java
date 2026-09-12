@@ -6,6 +6,7 @@ import com.walletservice.model.AccountResult;
 import com.walletservice.model.Transfer;
 import com.walletservice.model.TransferResult;
 import com.walletservice.model.TransferStatus;
+import com.walletservice.observability.BusinessObservability;
 import com.walletservice.security.SecurityConfig;
 import com.walletservice.security.SecurityErrorWriter;
 import com.walletservice.service.AccountService;
@@ -15,9 +16,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -28,6 +33,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -39,8 +45,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "wallet.jwt.audience=wallet-service"
         }
 )
-@Import({SecurityConfig.class, SecurityErrorWriter.class, ApiExceptionHandler.class})
+@Import({SecurityConfig.class, SecurityErrorWriter.class, ApiExceptionHandler.class,
+        WalletApiTest.MetricsTestConfiguration.class})
 class WalletApiTest {
+
+    @TestConfiguration
+    static class MetricsTestConfiguration {
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+    }
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RECIPIENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -54,13 +69,17 @@ class WalletApiTest {
     private TransferService transferService;
     @MockitoBean
     private TransferQueryService transferQueryService;
+    @MockitoBean
+    private BusinessObservability observability;
 
     @Test
     void rejectsMissingBearerToken() throws Exception {
         mockMvc.perform(get("/accounts/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.code").value("unauthorized"));
+                .andExpect(jsonPath("$.code").value("unauthorized"))
+                .andExpect(jsonPath("$.correlation_id").isNotEmpty())
+                .andExpect(header().exists("X-Correlation-ID"));
     }
 
     @Test
