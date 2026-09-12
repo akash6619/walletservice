@@ -4,10 +4,13 @@ import com.walletservice.dto.ApiError;
 import com.walletservice.observability.BusinessObservability;
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -75,8 +78,8 @@ public class ApiExceptionHandler {
         return error(HttpStatus.METHOD_NOT_ALLOWED, "method_not_allowed", "The HTTP method is not supported", false);
     }
 
-    @ExceptionHandler(DataAccessException.class)
-    ResponseEntity<ApiError> databaseFailure(DataAccessException exception) {
+    @ExceptionHandler({DataAccessException.class, CannotCreateTransactionException.class})
+    ResponseEntity<ApiError> databaseFailure(Exception exception) {
         if (isRetryable(exception)) {
             observability.retryableDatabaseFailure();
             HttpHeaders headers = new HttpHeaders();
@@ -103,6 +106,11 @@ public class ApiExceptionHandler {
     private static boolean isRetryable(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
+            if (current instanceof CannotCreateTransactionException
+                    || current instanceof CannotGetJdbcConnectionException
+                    || current instanceof TransientDataAccessException) {
+                return true;
+            }
             if (current instanceof SQLException sqlException) {
                 String sqlState = sqlException.getSQLState();
                 if (sqlState != null && (sqlState.startsWith("08") || RETRYABLE_SQL_STATES.contains(sqlState))) {

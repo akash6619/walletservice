@@ -3,6 +3,8 @@ package com.walletservice.exception;
 import com.walletservice.observability.BusinessObservability;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 import java.sql.SQLException;
 
@@ -19,6 +21,27 @@ class ApiExceptionHandlerTest {
         var exception = new DataAccessResourceFailureException(
                 "deadlock",
                 new SQLException("deadlock detected", "40P01")
+        );
+
+        var response = handler.databaseFailure(exception);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(503);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().retryable()).isTrue();
+        assertThat(response.getBody().code()).isEqualTo("database_temporarily_unavailable");
+        verify(observability).retryableDatabaseFailure();
+    }
+
+    @Test
+    void mapsConnectionPoolTimeoutWithoutSqlStateToRetryableServiceUnavailable() {
+        BusinessObservability observability = mock(BusinessObservability.class);
+        ApiExceptionHandler handler = new ApiExceptionHandler(observability);
+        var exception = new CannotCreateTransactionException(
+                "Could not open JDBC connection for transaction",
+                new CannotGetJdbcConnectionException(
+                        "Failed to obtain JDBC connection",
+                        new SQLException("Connection is not available, request timed out", (String) null)
+                )
         );
 
         var response = handler.databaseFailure(exception);
