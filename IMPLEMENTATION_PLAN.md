@@ -6,8 +6,8 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Project and persistence foundation | Complete; awaiting review |
-| 2 | Core domain and transactional persistence | Not started |
+| 1 | Project and persistence foundation | Accepted; container runtime check deferred to Phase 6 |
+| 2 | Core domain and transactional persistence | Complete; awaiting review |
 | 3 | HTTP API, authentication, and error handling | Not started |
 | 4 | Observability and operational endpoints | Not started |
 | 5 | Concurrency verification and burst tooling | Not started |
@@ -59,7 +59,7 @@ Deliverables:
 - Conditional sender debit and atomic recipient credit.
 - Terminal `APPLIED` and `REJECTED_INSUFFICIENT_FUNDS` outcomes.
 - Transactional `AccountService`, `TransferService`, and participant-scoped `TransferQueryService`.
-- Focused repository/service unit tests for SQL-result interpretation and business branching.
+- Focused service unit tests for business branching and statement ordering; repository SQL is verified against real PostgreSQL in Phase 5.
 
 Verification gate:
 
@@ -74,6 +74,13 @@ Review focus:
 - Affected-row invariants.
 - Replay versus conflict semantics.
 - Readability of explicit SQL.
+
+Current result:
+
+- Models, repositories, services, and domain exceptions implemented.
+- Idempotency claim, ordered wallet upsert, conditional debit, credit, and terminal outcome ordering covered by unit tests.
+- Eight focused service tests pass.
+- Real PostgreSQL concurrency behavior remains intentionally reserved for Phase 5.
 
 ## Phase 3 — HTTP API, authentication, and error handling
 
