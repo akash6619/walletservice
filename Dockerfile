@@ -15,6 +15,6 @@ COPY --from=build --chown=wallet:wallet /workspace/target/wallet-service-*.jar a
 USER wallet
 EXPOSE 8080
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0"
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
   CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-8080}/healthz" || exit 1
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
