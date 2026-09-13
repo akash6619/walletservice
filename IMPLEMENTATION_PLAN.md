@@ -12,7 +12,7 @@ This document tracks implementation against the approved [architecture](ARCHITEC
 | 4 | Observability and operational endpoints | Completed |
 | 5 | Concurrency verification and burst tooling | Completed |
 | 6 | Delivery automation and deployment readiness | Completed |
-| 7 | Live deployment and final acceptance | Not started |
+| 7 | Live deployment and final acceptance | Completed |
 
 ## Phase 1 — Project and persistence foundation
 
@@ -175,7 +175,7 @@ Deliverables:
 - Same-key/different-body `409` test.
 - Participant authorization test at the HTTP/database boundary.
 - Retryable deadlock/lock-timeout mapping coverage.
-- One-command live burst script accepting `BASE_URL`, `TOKEN_A`, and `TOKEN_B`.
+- One-command Python live burst script accepting `BASE_URL`, `TOKEN_A`, and `TOKEN_B`.
 - Script retries `503` with the same idempotency key, fails on any `500`, and reconciles balances.
 
 Verification gate:
@@ -263,6 +263,15 @@ Review focus:
 - Exact match to the assessment mail.
 - Live concurrency correctness.
 - Operational evidence and free-tier cost statement.
+
+Current result:
+
+- The API is deployed at `https://wallet-service-kv6f.onrender.com` on Render Free with persistent Supabase PostgreSQL in Singapore.
+- Public `/healthz`, `/readyz`, and `/metrics` return `200`; protected API access without a bearer token returns the expected structured `401`.
+- The deployment retained schema and wallet data across redeploys, while Flyway reported schema version 3 current on startup.
+- Live connection-pool exhaustion initially exposed incorrect `500` mapping; the reviewed correction now returns retryable `503` through the transaction boundary.
+- The full live burst passed with 20 distinct requests plus 20 identical-key requests and reconciled balances of `99964 + 100036 = 200000` paise.
+- The public repository and application links are ready; reviewer access to Render's log explorer remains an account-level handoff outside the repository.
 
 ## Change-control rules
 

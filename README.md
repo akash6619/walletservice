@@ -6,7 +6,7 @@ A concurrency-safe peer-to-peer wallet HTTP API built with Java 21, Spring Boot,
 
 - Docker with Compose for the simplest local workflow
 - Java 21 and Docker for the Maven/Testcontainers verification suite
-- Bash, curl, and Python 3 for the burst script
+- Python 3.10+ for the burst script; `curl` is optional for manual API calls
 
 ## Run locally
 
@@ -14,7 +14,7 @@ A concurrency-safe peer-to-peer wallet HTTP API built with Java 21, Spring Boot,
 docker compose up --build -d
 curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
-./scripts/burst.sh
+./scripts/burst.py
 ```
 
 The local burst command idempotently provisions two demo users, generates one-hour JWTs using the Compose-only secret, creates their wallets through the API, sends concurrent distinct and identical-key requests, retries `503`, and reconciles balances. It exits nonzero for any invariant failure or `500` response.
@@ -83,10 +83,20 @@ For a deployed service with two provisioned demo users:
 BASE_URL=https://your-service.onrender.com \
 TOKEN_A='<private-token-a>' \
 TOKEN_B='<private-token-b>' \
-./scripts/burst.sh
+./scripts/burst.py
 ```
 
-Optional burst controls are `CONCURRENCY` (default `20`), `AMOUNT_PAISE` (default `1`), and `MAX_RETRIES` (default `5`).
+Optional burst controls are `CONCURRENCY` (default `20`), `AMOUNT_PAISE` (default `1`), and `MAX_RETRIES` (default `10`). The longer retry budget accommodates bounded connection-pool backpressure on free-tier hosting.
+
+## Live deployment
+
+- API: <https://wallet-service-kv6f.onrender.com>
+- Liveness: <https://wallet-service-kv6f.onrender.com/healthz>
+- Readiness: <https://wallet-service-kv6f.onrender.com/readyz>
+- Prometheus metrics: <https://wallet-service-kv6f.onrender.com/metrics>
+- Repository: <https://github.com/akash6619/walletservice>
+
+The deployed Render Free service uses persistent Supabase PostgreSQL in Singapore. A full live run of 20 distinct requests plus 20 identical-key requests passed with retryable overload handling and reconciled balances. Render log-explorer access must be granted to reviewers through the Render dashboard; it is not anonymously public.
 
 ## Deploy: Supabase PostgreSQL
 
@@ -116,7 +126,7 @@ Generate private one-hour demo tokens locally with the exact same secret configu
 ```bash
 export JWT_SECRET='<the-render-secret>'
 eval "$(./scripts/generate-demo-tokens.py)"
-BASE_URL=https://your-service.onrender.com ./scripts/burst.sh
+BASE_URL=https://your-service.onrender.com ./scripts/burst.py
 unset JWT_SECRET TOKEN_A TOKEN_B
 ```
 
