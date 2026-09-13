@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: wallet-service
+    name: wallet-service-5687
     runtime: docker
     plan: free
     autoDeployTrigger: checksPass
