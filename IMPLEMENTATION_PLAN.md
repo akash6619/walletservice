@@ -266,7 +266,7 @@ Review focus:
 
 Current result:
 
-- The API is deployed at `https://wallet-service-kv6f.onrender.com` on Render Free with persistent Supabase PostgreSQL in Singapore.
+- The API is deployed on Render Free with persistent Supabase PostgreSQL in Singapore; its URL is supplied to reviewers privately.
 - Public `/healthz`, `/readyz`, and `/metrics` return `200`; protected API access without a bearer token returns the expected structured `401`.
 - The deployment retained schema and wallet data across redeploys, while Flyway reported schema version 3 current on startup.
 - Live connection-pool exhaustion initially exposed incorrect `500` mapping; the reviewed correction now returns retryable `503` through the transaction boundary.
