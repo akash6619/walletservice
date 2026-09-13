@@ -90,13 +90,7 @@ Optional burst controls are `CONCURRENCY` (default `20`), `AMOUNT_PAISE` (defaul
 
 ## Live deployment
 
-- API: <https://wallet-service-kv6f.onrender.com>
-- Liveness: <https://wallet-service-kv6f.onrender.com/healthz>
-- Readiness: <https://wallet-service-kv6f.onrender.com/readyz>
-- Prometheus metrics: <https://wallet-service-kv6f.onrender.com/metrics>
-- Repository: <https://github.com/akash6619/walletservice>
-
-The deployed Render Free service uses persistent Supabase PostgreSQL in Singapore. A full live run of 20 distinct requests plus 20 identical-key requests passed with retryable overload handling and reconciled balances. Render log-explorer access must be granted to reviewers through the Render dashboard; it is not anonymously public.
+The deployed Render Free service uses persistent Supabase PostgreSQL in Singapore. Its URL and temporary demo tokens are shared privately with reviewers rather than published in the repository. A full live run of 20 distinct requests plus 20 identical-key requests passed with retryable overload handling and reconciled balances. Render log-explorer access must be granted to reviewers through the Render dashboard; it is not anonymously public.
 
 ## Deploy: Supabase PostgreSQL
 
