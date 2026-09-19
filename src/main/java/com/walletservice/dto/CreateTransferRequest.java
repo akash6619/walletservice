@@ -8,6 +8,10 @@ import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 
+/**
+ * Validated JSON body for creating a transfer.
+ * The idempotency key is restricted to printable ASCII so it is safe to log and propagate.
+ */
 public record CreateTransferRequest(
         @NotNull UUID toUser,
         @NotNull @Positive Long amountPaise,

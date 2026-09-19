@@ -3,6 +3,7 @@ package com.walletservice.model;
 import java.time.Instant;
 import java.util.UUID;
 
+/** Immutable persisted view of a transfer and its lifecycle state. */
 public record Transfer(
         UUID transferId,
         UUID fromUser,

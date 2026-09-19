@@ -23,6 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+/**
+ * Exposes authenticated money-transfer commands and participant-scoped transfer queries.
+ * Domain results are translated into stable API DTOs and HTTP errors by this layer.
+ */
 @RestController
 @RequestMapping("/transfers")
 public class TransferController {
@@ -31,6 +35,7 @@ public class TransferController {
     private final TransferQueryService transferQueryService;
     private final BusinessObservability observability;
 
+    /** Creates the controller with command, query, and observability collaborators. */
     public TransferController(
             TransferService transferService,
             TransferQueryService transferQueryService,
@@ -41,6 +46,15 @@ public class TransferController {
         this.observability = observability;
     }
 
+    /**
+     * Executes or replays an idempotent transfer for the authenticated sender.
+     * A persisted insufficient-funds result is deliberately converted to an API exception after
+     * telemetry is recorded; successful and replayed transfers return the same response shape.
+     *
+     * @param jwt verified bearer token identifying the sender
+     * @param request validated transfer body
+     * @return the transfer identifier and sender's post-transfer balance
+     */
     @PostMapping
     public TransferResponse transfer(
             @AuthenticationPrincipal Jwt jwt,
@@ -59,6 +73,13 @@ public class TransferController {
         return TransferMapper.toResponse(result);
     }
 
+    /**
+     * Returns a finalized transfer only when the caller is its sender or recipient.
+     *
+     * @param id transfer identifier from the route
+     * @param jwt verified bearer token identifying the caller
+     * @return participant-visible transfer details
+     */
     @GetMapping("/{id}")
     public TransferDetailsResponse get(
             @PathVariable UUID id,

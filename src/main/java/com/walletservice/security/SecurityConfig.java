@@ -22,9 +22,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
+/** Configures stateless bearer-token authentication and strict JWT claim validation. */
 @Configuration
 public class SecurityConfig {
 
+    /**
+     * Builds the HTTP security policy: operational probes are public, internal health paths are
+     * denied, and every business endpoint requires a valid bearer token.
+     */
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityErrorWriter errorWriter) throws Exception {
         return http
@@ -56,6 +61,10 @@ public class SecurityConfig {
                 .build();
     }
 
+    /**
+     * Creates an HMAC JWT decoder that validates signature, timestamps, issuer, audience, and a
+     * UUID-formatted subject before authentication succeeds.
+     */
     @Bean
     JwtDecoder jwtDecoder(
             @Value("${wallet.jwt.secret}") String secret,
@@ -80,6 +89,7 @@ public class SecurityConfig {
         return decoder;
     }
 
+    /** Returns whether a claim value is a syntactically valid UUID. */
     private static boolean isUuid(String value) {
         try {
             UUID.fromString(value);

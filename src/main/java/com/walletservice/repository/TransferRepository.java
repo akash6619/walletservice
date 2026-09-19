@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Stores transfer state and implements the database half of the idempotency protocol.
+ * A unique sender/idempotency-key constraint makes {@link #claim} safe under concurrency.
+ */
 @Repository
 public class TransferRepository {
 
@@ -59,15 +63,25 @@ public class TransferRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /** Creates a transfer repository backed by Spring's named-parameter JDBC template. */
     public TransferRepository(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Applies transaction-local PostgreSQL time limits so lock contention fails quickly and can be
+     * surfaced to clients as a retryable response.
+     */
     public void configureTransactionTimeouts() {
         jdbc.getJdbcTemplate().execute("SET LOCAL lock_timeout = '2s'");
         jdbc.getJdbcTemplate().execute("SET LOCAL statement_timeout = '4s'");
     }
 
+    /**
+     * Attempts to reserve an idempotency key with a new {@code PROCESSING} transfer row.
+     *
+     * @return the candidate ID when inserted, or empty when the sender/key already exists
+     */
     public Optional<UUID> claim(
             UUID candidateTransferId,
             UUID fromUser,
@@ -88,6 +102,7 @@ public class TransferRepository {
         return claimedIds.stream().findFirst();
     }
 
+    /** Finds the transfer recorded for a sender-scoped idempotency key. */
     public Optional<Transfer> findBySenderAndKey(UUID fromUser, String idempotencyKey) {
         return queryOne(
                 FIND_BY_SENDER_AND_KEY,
@@ -97,6 +112,10 @@ public class TransferRepository {
         );
     }
 
+    /**
+     * Finds a finalized transfer only if the caller participates as sender or recipient.
+     * The visibility predicate is enforced in SQL to avoid accidentally exposing private data.
+     */
     public Optional<Transfer> findVisibleById(UUID transferId, UUID caller) {
         return queryOne(
                 FIND_VISIBLE_BY_ID,
@@ -106,6 +125,7 @@ public class TransferRepository {
         );
     }
 
+    /** Transitions one claimed transfer from processing to applied and records its ending balance. */
     public void finalizeApplied(UUID transferId, long senderBalanceAfter) {
         assertSingleRow(jdbc.update(
                 FINALIZE_APPLIED,
@@ -115,6 +135,7 @@ public class TransferRepository {
         ), "Applied transfer finalization");
     }
 
+    /** Transitions one claimed transfer to the terminal insufficient-funds state. */
     public void finalizeRejected(UUID transferId) {
         assertSingleRow(jdbc.update(
                 FINALIZE_REJECTED,
@@ -122,17 +143,20 @@ public class TransferRepository {
         ), "Rejected transfer finalization");
     }
 
+    /** Executes a query expected to return at most one transfer. */
     private Optional<Transfer> queryOne(String sql, MapSqlParameterSource parameters) {
         List<Transfer> transfers = jdbc.query(sql, parameters, TransferRepository::mapTransfer);
         return transfers.stream().findFirst();
     }
 
+    /** Fails fast when a state transition did not update exactly its claimed row. */
     private static void assertSingleRow(int affected, String operation) {
         if (affected != 1) {
             throw new InvariantViolationException(operation + " did not affect exactly one row");
         }
     }
 
+    /** Maps the current JDBC row to the immutable transfer domain model. */
     private static Transfer mapTransfer(ResultSet resultSet, int rowNumber) throws SQLException {
         return new Transfer(
                 resultSet.getObject("transfer_id", UUID.class),

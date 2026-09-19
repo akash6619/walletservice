@@ -13,6 +13,10 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 
+/**
+ * Persists wallets and performs balance mutations as atomic SQL operations.
+ * Monetary values are integer paise; no floating-point conversion occurs in this layer.
+ */
 @Repository
 public class WalletRepository {
 
@@ -46,10 +50,16 @@ public class WalletRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /** Creates a wallet repository backed by Spring's named-parameter JDBC template. */
     public WalletRepository(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Inserts a wallet unless the user's unique wallet already exists.
+     *
+     * @return {@code true} only when this call inserted the row
+     */
     public boolean createIfAbsent(UUID userId, long initialBalance) {
         int affected = jdbc.update(
                 CREATE_IF_ABSENT,
@@ -64,6 +74,7 @@ public class WalletRepository {
         return affected == 1;
     }
 
+    /** Finds the wallet belonging to a user. */
     public Optional<Wallet> findByUserId(UUID userId) {
         List<Wallet> wallets = jdbc.query(
                 FIND_BY_USER_ID,
@@ -73,6 +84,10 @@ public class WalletRepository {
         return wallets.stream().findFirst();
     }
 
+    /**
+     * Atomically debits the requested amount only when the wallet has sufficient funds.
+     * The returned value is the balance after the debit; an empty value means no row qualified.
+     */
     public OptionalLong debitIfSufficient(UUID userId, long amount) {
         List<Long> balances = jdbc.query(
                 DEBIT_IF_SUFFICIENT,
@@ -84,6 +99,7 @@ public class WalletRepository {
         return balances.isEmpty() ? OptionalLong.empty() : OptionalLong.of(balances.getFirst());
     }
 
+    /** Credits exactly one recipient wallet, treating any other row count as corruption. */
     public void credit(UUID userId, long amount) {
         int affected = jdbc.update(
                 CREDIT,
@@ -96,6 +112,7 @@ public class WalletRepository {
         }
     }
 
+    /** Maps the current JDBC row to the immutable wallet domain model. */
     private static Wallet mapWallet(ResultSet resultSet, int rowNumber) throws SQLException {
         return new Wallet(
                 resultSet.getObject("wallet_id", UUID.class),
