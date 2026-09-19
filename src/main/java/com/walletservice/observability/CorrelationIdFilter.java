@@ -18,6 +18,10 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.io.IOException;
 import java.util.UUID;
 
+/**
+ * Establishes per-request correlation, latency, count metrics, and structured completion logging.
+ * It runs first so security and controller errors receive the same response header and MDC value.
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {
@@ -28,10 +32,15 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
     private final MeterRegistry meterRegistry;
 
+    /** Creates the filter using the application's Micrometer registry. */
     public CorrelationIdFilter(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
     }
 
+    /**
+     * Wraps the complete filter chain and records telemetry in {@code finally}, including failures.
+     * MDC cleanup is essential because servlet threads are reused across unrelated requests.
+     */
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -68,6 +77,10 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Uses Spring's normalized route template to avoid high-cardinality IDs in metrics; requests
+     * that never matched a handler share the {@code UNKNOWN} label.
+     */
     private static String route(HttpServletRequest request) {
         Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         return pattern instanceof String value ? value : "UNKNOWN";

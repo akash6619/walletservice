@@ -5,6 +5,7 @@ import com.walletservice.model.TransferStatus;
 import java.time.Instant;
 import java.util.UUID;
 
+/** Participant-visible, finalized transfer representation returned by the query endpoint. */
 public record TransferDetailsResponse(
         UUID transferId,
         UUID fromUser,

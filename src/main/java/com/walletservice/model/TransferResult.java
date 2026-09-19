@@ -2,6 +2,10 @@ package com.walletservice.model;
 
 import java.util.UUID;
 
+/**
+ * Outcome returned by the transfer command, including flags needed for business telemetry.
+ * {@code senderBalanceAfter} is absent for a rejected insufficient-funds transfer.
+ */
 public record TransferResult(
         UUID transferId,
         TransferStatus status,
@@ -11,6 +15,7 @@ public record TransferResult(
         boolean recipientWalletCreated
 ) {
 
+    /** Builds a result from an already committed transfer reached through an idempotent retry. */
     public static TransferResult replay(Transfer transfer) {
         return new TransferResult(
                 transfer.transferId(),
@@ -22,6 +27,7 @@ public record TransferResult(
         );
     }
 
+    /** Builds the terminal result of a newly applied transfer. */
     public static TransferResult applied(
             UUID transferId,
             long senderBalanceAfter,
@@ -38,6 +44,7 @@ public record TransferResult(
         );
     }
 
+    /** Builds the terminal result of a newly rejected transfer. */
     public static TransferResult insufficientFunds(
             UUID transferId,
             boolean senderWalletCreated,
