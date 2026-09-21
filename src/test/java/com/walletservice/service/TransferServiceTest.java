@@ -75,6 +75,7 @@ class TransferServiceTest {
 
         InOrder moneyOrder = inOrder(walletRepository, transferRepository);
         moneyOrder.verify(transferRepository).configureTransactionTimeouts();
+        moneyOrder.verify(transferRepository).lockIdempotencyKey(SENDER, "payment-1");
         moneyOrder.verify(transferRepository).claim(any(), any(), any(), anyLong(), any());
         moneyOrder.verify(walletRepository).createIfAbsent(SENDER, INITIAL_BALANCE);
         moneyOrder.verify(walletRepository).createIfAbsent(RECIPIENT, INITIAL_BALANCE);
@@ -106,8 +107,11 @@ class TransferServiceTest {
                 existingId,
                 SENDER,
                 RECIPIENT,
+                SENDER,
                 500L,
                 "payment-3",
+                com.walletservice.model.TransferType.TRANSFER,
+                null,
                 TransferStatus.APPLIED,
                 99_500L,
                 Instant.now()
@@ -135,8 +139,11 @@ class TransferServiceTest {
                 UUID.randomUUID(),
                 SENDER,
                 RECIPIENT,
+                SENDER,
                 500L,
                 "payment-4",
+                com.walletservice.model.TransferType.TRANSFER,
+                null,
                 TransferStatus.REJECTED_INSUFFICIENT_FUNDS,
                 null,
                 Instant.now()

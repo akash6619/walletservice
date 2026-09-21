@@ -3,8 +3,10 @@ package com.walletservice.integration;
 import com.walletservice.model.AccountResult;
 import com.walletservice.model.TransferResult;
 import com.walletservice.model.TransferStatus;
+import com.walletservice.exception.IdempotencyConflictException;
 import com.walletservice.service.AccountService;
 import com.walletservice.service.TransferService;
+import com.walletservice.service.ReversalService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,7 @@ class PostgresConcurrencyIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AccountService accountService;
     @Autowired TransferService transferService;
+    @Autowired ReversalService reversalService;
     @Autowired MockMvc mockMvc;
 
     private ExecutorService executor;
@@ -105,6 +108,73 @@ class PostgresConcurrencyIntegrationTest {
         assertThat(balance(sender)).isEqualTo(875);
         assertThat(balance(recipient)).isEqualTo(1125);
         assertThat(count("transfers", "from_user", sender)).isOne();
+    }
+
+    @Test
+    void identicalConcurrentReversalsApplyExactlyOnce() throws Exception {
+        UUID sender = createUser("Sender");
+        UUID recipient = createUser("Recipient");
+        UUID originalId = transferService.transfer(sender, recipient, 125, "payment-key").transferId();
+
+        List<TransferResult> results = runTogether(
+                20,
+                () -> reversalService.reverse(originalId, sender, "reversal-key")
+        );
+
+        assertThat(results.stream().map(TransferResult::transferId)
+                .collect(java.util.stream.Collectors.toSet())).hasSize(1);
+        assertThat(results).filteredOn(result -> !result.replay()).hasSize(1);
+        assertThat(balance(sender)).isEqualTo(1000);
+        assertThat(balance(recipient)).isEqualTo(1000);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM transfers WHERE reverses_transfer_id = ?",
+                Long.class,
+                originalId
+        )).isOne();
+    }
+
+    @Test
+    void sameReversalKeyForDifferentTransfersReturnsConflictWithoutExtraMutation() throws Exception {
+        UUID sender = createUser("Sender");
+        UUID firstRecipient = createUser("First Recipient");
+        UUID secondRecipient = createUser("Second Recipient");
+        UUID firstTransfer = transferService.transfer(sender, firstRecipient, 100, "payment-1").transferId();
+        UUID secondTransfer = transferService.transfer(sender, secondRecipient, 100, "payment-2").transferId();
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<String>> futures = List.of(
+                executor.submit(() -> reverseOutcome(start, firstTransfer, sender)),
+                executor.submit(() -> reverseOutcome(start, secondTransfer, sender))
+        );
+        start.countDown();
+
+        assertThat(getAll(futures)).containsExactlyInAnyOrder("applied", "conflict");
+        assertThat(balance(sender)).isEqualTo(900);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM transfers WHERE transfer_type = 'REVERSAL'", Long.class)).isOne();
+    }
+
+    @Test
+    void recipientCannotInitiateReversalAndReversalCannotBeReversed() throws Exception {
+        UUID sender = createUser("Sender");
+        UUID recipient = createUser("Recipient");
+        UUID originalId = transferService.transfer(sender, recipient, 125, "payment-key").transferId();
+
+        mockMvc.perform(post("/transfers/{id}/reversal", originalId)
+                        .with(jwt().jwt(token -> token.subject(recipient.toString())))
+                        .contentType("application/json")
+                        .content("{\"idempotency_key\":\"unauthorized-reversal\"}"))
+                .andExpect(status().isNotFound());
+
+        UUID reversalId = reversalService.reverse(originalId, sender, "valid-reversal").transferId();
+        mockMvc.perform(post("/transfers/{id}/reversal", reversalId)
+                        .with(jwt().jwt(token -> token.subject(sender.toString())))
+                        .contentType("application/json")
+                        .content("{\"idempotency_key\":\"reverse-a-reversal\"}"))
+                .andExpect(status().isNotFound());
+
+        assertThat(balance(sender)).isEqualTo(1000);
+        assertThat(balance(recipient)).isEqualTo(1000);
     }
 
     @Test
@@ -215,6 +285,16 @@ class PostgresConcurrencyIntegrationTest {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO users (user_id, name) VALUES (?, ?)", id, name);
         return id;
+    }
+
+    private String reverseOutcome(CountDownLatch start, UUID transferId, UUID sender) throws Exception {
+        start.await();
+        try {
+            reversalService.reverse(transferId, sender, "shared-reversal-key");
+            return "applied";
+        } catch (IdempotencyConflictException exception) {
+            return "conflict";
+        }
     }
 
     private long balance(UUID user) {

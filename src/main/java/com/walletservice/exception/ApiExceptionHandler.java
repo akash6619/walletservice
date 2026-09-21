@@ -61,6 +61,12 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, "idempotency_conflict", exception.getMessage(), false);
     }
 
+    /** Maps an attempt to reverse an already reversed transfer to HTTP 409. */
+    @ExceptionHandler(TransferAlreadyReversedException.class)
+    ResponseEntity<ApiError> alreadyReversed(TransferAlreadyReversedException exception) {
+        return error(HttpStatus.CONFLICT, "already_reversed", exception.getMessage(), false);
+    }
+
     /** Maps a durably rejected transfer to HTTP 422. */
     @ExceptionHandler(InsufficientFundsException.class)
     ResponseEntity<ApiError> insufficientFunds(InsufficientFundsException exception) {

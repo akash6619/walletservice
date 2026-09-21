@@ -3,6 +3,7 @@ package com.walletservice.repository;
 import com.walletservice.exception.InvariantViolationException;
 import com.walletservice.model.Transfer;
 import com.walletservice.model.TransferStatus;
+import com.walletservice.model.TransferType;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -22,29 +23,60 @@ public class TransferRepository {
 
     private static final String CLAIM = """
             INSERT INTO transfers (
-                transfer_id, from_user, to_user, amount_paise, idempotency_key, status
+                transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                transfer_type, status
             ) VALUES (
-                :transferId, :fromUser, :toUser, :amount, :idempotencyKey, 'PROCESSING'
+                :transferId, :fromUser, :toUser, :fromUser, :amount, :idempotencyKey,
+                'TRANSFER', 'PROCESSING'
             )
-            ON CONFLICT (from_user, idempotency_key) DO NOTHING
+            ON CONFLICT (initiated_by, idempotency_key) DO NOTHING
             RETURNING transfer_id
             """;
 
     private static final String FIND_BY_SENDER_AND_KEY = """
-            SELECT transfer_id, from_user, to_user, amount_paise, idempotency_key,
-                   status, sender_balance_after, created_at
+            SELECT transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                   transfer_type, reverses_transfer_id, status, sender_balance_after, created_at
             FROM transfers
-            WHERE from_user = :fromUser
+            WHERE initiated_by = :fromUser
               AND idempotency_key = :idempotencyKey
             """;
 
     private static final String FIND_VISIBLE_BY_ID = """
-            SELECT transfer_id, from_user, to_user, amount_paise, idempotency_key,
-                   status, sender_balance_after, created_at
+            SELECT transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                   transfer_type, reverses_transfer_id, status, sender_balance_after, created_at
             FROM transfers
             WHERE transfer_id = :transferId
               AND (:caller = from_user OR :caller = to_user)
               AND status <> 'PROCESSING'
+            """;
+
+    private static final String FIND_REVERSIBLE_FOR_UPDATE = """
+            SELECT transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                   transfer_type, reverses_transfer_id, status, sender_balance_after, created_at
+            FROM transfers
+            WHERE transfer_id = :transferId
+              AND from_user = :caller
+              AND transfer_type = 'TRANSFER'
+              AND status = 'APPLIED'
+            FOR UPDATE
+            """;
+
+    private static final String FIND_REVERSAL = """
+            SELECT transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                   transfer_type, reverses_transfer_id, status, sender_balance_after, created_at
+            FROM transfers
+            WHERE reverses_transfer_id = :originalTransferId
+              AND transfer_type = 'REVERSAL'
+            """;
+
+    private static final String INSERT_REVERSAL = """
+            INSERT INTO transfers (
+                transfer_id, from_user, to_user, initiated_by, amount_paise, idempotency_key,
+                transfer_type, reverses_transfer_id, status, sender_balance_after
+            ) VALUES (
+                :transferId, :fromUser, :toUser, :initiatedBy, :amount, :idempotencyKey,
+                'REVERSAL', :originalTransferId, 'APPLIED', :senderBalanceAfter
+            )
             """;
 
     private static final String FINALIZE_APPLIED = """
@@ -77,6 +109,17 @@ public class TransferRepository {
         jdbc.getJdbcTemplate().execute("SET LOCAL statement_timeout = '4s'");
     }
 
+    /** Serializes commands sharing an initiator/idempotency key without creating a claim row. */
+    public void lockIdempotencyKey(UUID initiator, String idempotencyKey) {
+        jdbc.queryForObject(
+                "SELECT pg_advisory_xact_lock(hashtextextended(CAST(:initiator AS text) || ':' || :key, 0))",
+                new MapSqlParameterSource()
+                        .addValue("initiator", initiator)
+                        .addValue("key", idempotencyKey),
+                Object.class
+        );
+    }
+
     /**
      * Attempts to reserve an idempotency key with a new {@code PROCESSING} transfer row.
      *
@@ -102,7 +145,7 @@ public class TransferRepository {
         return claimedIds.stream().findFirst();
     }
 
-    /** Finds the transfer recorded for a sender-scoped idempotency key. */
+    /** Finds the transfer recorded for an initiator-scoped idempotency key. */
     public Optional<Transfer> findBySenderAndKey(UUID fromUser, String idempotencyKey) {
         return queryOne(
                 FIND_BY_SENDER_AND_KEY,
@@ -123,6 +166,38 @@ public class TransferRepository {
                         .addValue("transferId", transferId)
                         .addValue("caller", caller)
         );
+    }
+
+    /** Locks and returns an applied non-reversal transfer owned by the authenticated sender. */
+    public Optional<Transfer> findReversibleForUpdate(UUID transferId, UUID caller) {
+        return queryOne(FIND_REVERSIBLE_FOR_UPDATE, new MapSqlParameterSource()
+                .addValue("transferId", transferId)
+                .addValue("caller", caller));
+    }
+
+    /** Finds the single successful reversal linked to an original transfer. */
+    public Optional<Transfer> findReversal(UUID originalTransferId) {
+        return queryOne(FIND_REVERSAL,
+                new MapSqlParameterSource("originalTransferId", originalTransferId));
+    }
+
+    /** Inserts a completed compensating movement; the surrounding transaction owns atomicity. */
+    public void insertAppliedReversal(
+            UUID transferId,
+            Transfer original,
+            UUID initiatedBy,
+            String idempotencyKey,
+            long senderBalanceAfter
+    ) {
+        assertSingleRow(jdbc.update(INSERT_REVERSAL, new MapSqlParameterSource()
+                .addValue("transferId", transferId)
+                .addValue("fromUser", original.toUser())
+                .addValue("toUser", original.fromUser())
+                .addValue("initiatedBy", initiatedBy)
+                .addValue("amount", original.amountPaise())
+                .addValue("idempotencyKey", idempotencyKey)
+                .addValue("originalTransferId", original.transferId())
+                .addValue("senderBalanceAfter", senderBalanceAfter)), "Reversal insert");
     }
 
     /** Transitions one claimed transfer from processing to applied and records its ending balance. */
@@ -162,8 +237,11 @@ public class TransferRepository {
                 resultSet.getObject("transfer_id", UUID.class),
                 resultSet.getObject("from_user", UUID.class),
                 resultSet.getObject("to_user", UUID.class),
+                resultSet.getObject("initiated_by", UUID.class),
                 resultSet.getLong("amount_paise"),
                 resultSet.getString("idempotency_key"),
+                TransferType.valueOf(resultSet.getString("transfer_type")),
+                resultSet.getObject("reverses_transfer_id", UUID.class),
                 TransferStatus.valueOf(resultSet.getString("status")),
                 resultSet.getObject("sender_balance_after", Long.class),
                 resultSet.getTimestamp("created_at").toInstant()

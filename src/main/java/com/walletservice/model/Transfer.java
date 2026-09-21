@@ -8,8 +8,11 @@ public record Transfer(
         UUID transferId,
         UUID fromUser,
         UUID toUser,
+        UUID initiatedBy,
         long amountPaise,
         String idempotencyKey,
+        TransferType transferType,
+        UUID reversesTransferId,
         TransferStatus status,
         Long senderBalanceAfter,
         Instant createdAt
