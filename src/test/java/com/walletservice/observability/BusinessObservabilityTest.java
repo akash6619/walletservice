@@ -44,6 +44,19 @@ class BusinessObservabilityTest {
     }
 
     @Test
+    void recordsReversalWithoutReportingTransferOrWalletUpsert() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BusinessObservability observability = new BusinessObservability(registry);
+
+        observability.reversalCompleted(
+                TransferResult.applied(UUID.randomUUID(), 900L, false, false));
+
+        assertThat(registry.counter("reversals_total", "outcome", "applied").count()).isEqualTo(1);
+        assertThat(registry.find("transfers_total").meters()).isEmpty();
+        assertThat(registry.find("wallet_upserts_total").meters()).isEmpty();
+    }
+
+    @Test
     void recordsAccountAndFailureOutcomes() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         BusinessObservability observability = new BusinessObservability(registry);

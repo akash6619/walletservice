@@ -31,6 +31,8 @@ public final class TransferMapper {
                 transfer.fromUser(),
                 transfer.toUser(),
                 transfer.amountPaise(),
+                transfer.transferType(),
+                transfer.reversesTransferId(),
                 transfer.status(),
                 transfer.createdAt()
         );

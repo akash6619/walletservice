@@ -66,6 +66,7 @@ public class TransferService {
         validate(caller, recipient, amountPaise, idempotencyKey);
         requireActiveParticipants(caller, recipient);
         transferRepository.configureTransactionTimeouts();
+        transferRepository.lockIdempotencyKey(caller, idempotencyKey);
 
         // Claiming first makes the transfer row both the idempotency record and the concurrency gate.
         UUID candidateTransferId = UUID.randomUUID();

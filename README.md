@@ -54,6 +54,12 @@ curl -X POST "$BASE_URL/transfers" \
   -d '{"to_user":"00000000-0000-0000-0000-000000000002","amount_paise":250,"idempotency_key":"payment-1"}'
 
 curl "$BASE_URL/transfers/<transfer-id>" -H "Authorization: Bearer $TOKEN_A"
+
+# Only the original sender may reverse an applied transfer. Amount and parties are derived server-side.
+curl -X POST "$BASE_URL/transfers/<transfer-id>/reversal" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d '{"idempotency_key":"reversal-001"}'
 ```
 
 Operational routes are public:

@@ -14,7 +14,7 @@ Approved decisions:
 
 Build only the requested HTTP API: signed-token authentication, wallet get-or-create, peer-to-peer transfers, participant-only transfer reads, health/readiness, Prometheus metrics, JSON logs, migrations, a concurrency burst script, container packaging, and free-tier deployment.
 
-The primary success criterion is correctness under concurrent requests and retries. UI, registration, password management, deposits/withdrawals, transaction history, reversals, currencies, notifications, and an event bus are explicitly out of scope.
+The primary success criterion is correctness under concurrent requests and retries. UI, registration, password management, deposits/withdrawals, transaction history, currencies, notifications, and an event bus are explicitly out of scope. Full transfer reversal is supported as an atomic compensating row in the existing `transfers` table.
 
 ### Required invariants
 
@@ -110,6 +110,7 @@ All money values are signed 64-bit integers at the API boundary and `BIGINT` in 
 | `GET /accounts/me` | `200 {"balance": n}`; `404 account_not_found` if never created. |
 | `POST /transfers` | `200` for both first success and successful replay; `422` for insufficient funds; `409` for key/body conflict; `400` for invalid amount or self-transfer. Success contains the original `transfer_id` and sender `new_balance`. |
 | `GET /transfers/{id}` | `200` only when JWT `sub` is sender or recipient; otherwise return `404` to avoid disclosing existence. |
+| `POST /transfers/{id}/reversal` | The original sender may fully reverse an applied non-reversal transfer. A successful retry returns the same reversal ID; another key returns `409`; unauthorized, unknown, or reversal-of-reversal requests return `404`. |
 | `GET /healthz` | Process/event-loop liveness only; never depends on PostgreSQL. |
 | `GET /readyz` | Short-timeout PostgreSQL ping plus migration/schema compatibility; `503` when unavailable. |
 | `GET /metrics` | Public Prometheus text endpoint. Never include user IDs or idempotency keys as labels. |
@@ -138,8 +139,12 @@ CREATE TABLE transfers (
   transfer_id       uuid PRIMARY KEY,
   from_user         uuid NOT NULL REFERENCES users(user_id),
   to_user           uuid NOT NULL REFERENCES users(user_id),
+  initiated_by      uuid NOT NULL REFERENCES users(user_id),
   amount_paise      bigint NOT NULL CHECK (amount_paise > 0),
   idempotency_key   varchar(128) NOT NULL CHECK (length(idempotency_key) BETWEEN 1 AND 128),
+  transfer_type     varchar(16) NOT NULL DEFAULT 'TRANSFER' CHECK
+                    (transfer_type IN ('TRANSFER', 'REVERSAL')),
+  reverses_transfer_id uuid REFERENCES transfers(transfer_id),
   status            varchar(32) NOT NULL CHECK
                     (status IN ('PROCESSING', 'APPLIED', 'REJECTED_INSUFFICIENT_FUNDS')),
   sender_balance_after bigint,
@@ -147,19 +152,26 @@ CREATE TABLE transfers (
   CHECK (from_user <> to_user),
   CHECK ((status = 'APPLIED' AND sender_balance_after IS NOT NULL)
       OR (status IN ('PROCESSING', 'REJECTED_INSUFFICIENT_FUNDS') AND sender_balance_after IS NULL)),
-  UNIQUE (from_user, idempotency_key)
+  CHECK ((transfer_type = 'TRANSFER' AND reverses_transfer_id IS NULL)
+      OR (transfer_type = 'REVERSAL' AND reverses_transfer_id IS NOT NULL)),
+  UNIQUE (initiated_by, idempotency_key)
 );
 
 CREATE INDEX transfers_to_user_idx ON transfers(to_user);
+CREATE UNIQUE INDEX one_reversal_per_original_transfer
+  ON transfers(reverses_transfer_id)
+  WHERE transfer_type = 'REVERSAL';
 ```
 
 `users` is the minimal local registry of valid identities; it does not implement credentials, registration, login, sessions, or token issuance. User IDs are UUIDs provisioned independently of display names. The verified JWT `sub` and `to_user` request value must parse as UUIDs; names are never used for identity or authorization. Both participants must exist and be active. A valid user may have no wallet yet, preserving the required transfer-time wallet creation behavior.
 
 `wallet_id` gives the wallet an identity independent of the user and leaves room for a future multi-wallet model, while `UNIQUE (user_id)` enforces the exercise's current rule of exactly zero or one wallet per user. We intentionally do not implement multiple wallets, currencies, or wallet lifecycle at this stage. Transfers reference users rather than wallets because a valid participant can exist before their wallet is created.
 
-The idempotency key is scoped to the authenticated sender, which prevents unrelated users from colliding. Compare the stored `to_user` and `amount_paise` directly to detect a same-key/different-body request; a separate request hash adds no value for this small request shape.
+The idempotency key is scoped to `initiated_by`, which is always the authenticated caller. For a normal transfer the initiator and `from_user` are the same; for a reversal, `initiated_by` is the original sender while `from_user` is the original recipient whose wallet is debited. Compare the stored command fields directly to detect a same-key/different-command request; a separate request hash adds no value for this small request shape.
 
-Applied and insufficient-funds outcomes are retained indefinitely for this exercise. Expiry introduces the possibility that an old retry moves money again. A production retention policy may archive rows, but the uniqueness tombstone for `(from_user, idempotency_key)` must live at least as long as clients may retry—often indefinitely for financial operations.
+A reversal is an immutable compensating row whose amount and participants are derived from its applied original transfer. The partial unique index permits at most one reversal row per original. Failed reversal attempts are not persisted, so only success consumes that slot. The service accepts only `TRANSFER` rows as reversal targets, preventing reversal chains.
+
+Applied and insufficient-funds outcomes are retained indefinitely for this exercise. Expiry introduces the possibility that an old retry moves money again. A production retention policy may archive rows, but the uniqueness tombstone for `(initiated_by, idempotency_key)` must live at least as long as clients may retry—often indefinitely for financial operations.
 
 ### Retry versus new attempt
 
@@ -265,7 +277,7 @@ NFR priority order: **correctness/data integrity > security > durability/auditab
 
 ## 8. Observability
 
-Generate a fresh UUID correlation ID for every request, add it to MDC and JSON logs, return it as `X-Correlation-ID`, include it in error bodies, and clear MDC in a `finally` block. Client-supplied tracing IDs are ignored. Emit one JSON object per event with timestamp, level, correlation ID, route, method, status, duration, and safe error code. Required domain events: `transfer_applied`, `insufficient_funds`, `idempotent_replay`, `idempotency_conflict`, `wallet_create_won`, `wallet_create_conflict`, and `auth_failed`. Do not interpret normal upsert conflicts as errors.
+Generate a fresh UUID correlation ID for every request, add it to MDC and JSON logs, return it as `X-Correlation-ID`, include it in error bodies, and clear MDC in a `finally` block. Client-supplied tracing IDs are ignored. Emit one JSON object per event with timestamp, level, correlation ID, route, method, status, duration, and safe error code. Required domain events: `transfer_applied`, `insufficient_funds`, `idempotent_replay`, `idempotency_conflict`, `reversal_applied`, `reversal_replay`, `wallet_create_won`, `wallet_create_conflict`, and `auth_failed`. Do not interpret normal upsert conflicts as errors.
 
 Business success/rejection logs and counters are emitted only after the transactional service returns and its commit has succeeded. Database exceptions are logged after rollback by the global exception handler. This avoids reporting rolled-back transfers as applied; a crash after commit but before logging is accepted because PostgreSQL remains the source of truth.
 
@@ -274,6 +286,7 @@ Metrics:
 - `http_requests_total{route,method,status_class}`
 - `http_request_duration_seconds{route,method}` histogram (dashboard computes p99)
 - `transfers_total{outcome="applied|insufficient|replay|conflict"}`
+- `reversals_total{outcome="applied|replay"}`
 - `wallet_upserts_total{outcome="created|existing"}`
 - database pool in-use/wait counters and readiness state
 

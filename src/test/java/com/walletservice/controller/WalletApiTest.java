@@ -12,6 +12,7 @@ import com.walletservice.security.SecurityErrorWriter;
 import com.walletservice.service.AccountService;
 import com.walletservice.service.TransferQueryService;
 import com.walletservice.service.TransferService;
+import com.walletservice.service.ReversalService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -70,6 +71,8 @@ class WalletApiTest {
     @MockitoBean
     private TransferQueryService transferQueryService;
     @MockitoBean
+    private ReversalService reversalService;
+    @MockitoBean
     private BusinessObservability observability;
 
     @Test
@@ -110,6 +113,24 @@ class WalletApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.transfer_id").value(transferId.toString()))
                 .andExpect(jsonPath("$.new_balance").value(98_500L));
+    }
+
+    @Test
+    void reversesTransferUsingAuthenticatedSubject() throws Exception {
+        UUID originalId = UUID.randomUUID();
+        UUID reversalId = UUID.randomUUID();
+        when(reversalService.reverse(originalId, USER_ID, "reverse-1"))
+                .thenReturn(TransferResult.applied(reversalId, 1_000L, false, false));
+
+        mockMvc.perform(post("/transfers/{id}/reversal", originalId)
+                        .with(jwt().jwt(token -> token.subject(USER_ID.toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idempotency_key":"reverse-1"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reversal_transfer_id").value(reversalId.toString()))
+                .andExpect(jsonPath("$.original_transfer_id").value(originalId.toString()));
     }
 
     @Test
@@ -157,8 +178,11 @@ class WalletApiTest {
                 transferId,
                 USER_ID,
                 RECIPIENT_ID,
+                USER_ID,
                 250L,
                 "secret-key",
+                com.walletservice.model.TransferType.TRANSFER,
+                null,
                 TransferStatus.APPLIED,
                 99_750L,
                 Instant.parse("2026-09-12T00:00:00Z")

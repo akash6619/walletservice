@@ -13,6 +13,12 @@ public class InsufficientFundsException extends RuntimeException {
         this.transferId = transferId;
     }
 
+    /** Creates an insufficient-funds error when no rejected transfer row is persisted. */
+    public InsufficientFundsException() {
+        super("The wallet has insufficient funds for this transfer");
+        this.transferId = null;
+    }
+
     /** Returns the identifier of the persisted rejected transfer. */
     public UUID getTransferId() {
         return transferId;

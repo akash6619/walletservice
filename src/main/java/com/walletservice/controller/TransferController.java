@@ -3,6 +3,8 @@ package com.walletservice.controller;
 import com.walletservice.dto.CreateTransferRequest;
 import com.walletservice.dto.TransferDetailsResponse;
 import com.walletservice.dto.TransferResponse;
+import com.walletservice.dto.ReverseTransferRequest;
+import com.walletservice.dto.ReversalResponse;
 import com.walletservice.exception.InsufficientFundsException;
 import com.walletservice.mapper.TransferMapper;
 import com.walletservice.model.TransferResult;
@@ -11,6 +13,7 @@ import com.walletservice.observability.BusinessObservability;
 import com.walletservice.security.AuthenticatedUser;
 import com.walletservice.service.TransferQueryService;
 import com.walletservice.service.TransferService;
+import com.walletservice.service.ReversalService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,16 +37,32 @@ public class TransferController {
     private final TransferService transferService;
     private final TransferQueryService transferQueryService;
     private final BusinessObservability observability;
+    private final ReversalService reversalService;
 
     /** Creates the controller with command, query, and observability collaborators. */
     public TransferController(
             TransferService transferService,
             TransferQueryService transferQueryService,
-            BusinessObservability observability
+            BusinessObservability observability,
+            ReversalService reversalService
     ) {
         this.transferService = transferService;
         this.transferQueryService = transferQueryService;
         this.observability = observability;
+        this.reversalService = reversalService;
+    }
+
+    /** Reverses an applied transfer only when the authenticated caller was its original sender. */
+    @PostMapping("/{id}/reversal")
+    public ReversalResponse reverse(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody ReverseTransferRequest request
+    ) {
+        TransferResult result = reversalService.reverse(
+                id, AuthenticatedUser.id(jwt), request.idempotencyKey());
+        observability.reversalCompleted(result);
+        return new ReversalResponse(result.transferId(), id);
     }
 
     /**

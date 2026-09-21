@@ -51,6 +51,20 @@ public class BusinessObservability {
         }
     }
 
+    /** Records a successful reversal or its replay without emitting wallet-upsert telemetry. */
+    public void reversalCompleted(TransferResult result) {
+        if (result.replay()) {
+            event("reversal_replay");
+            reversal("replay");
+            return;
+        }
+        if (result.status() != com.walletservice.model.TransferStatus.APPLIED) {
+            throw new IllegalArgumentException("A completed reversal must be APPLIED");
+        }
+        event("reversal_applied");
+        reversal("applied");
+    }
+
     /** Records reuse of an idempotency key with a conflicting request body. */
     public void idempotencyConflict() {
         event("idempotency_conflict");
@@ -77,6 +91,11 @@ public class BusinessObservability {
     /** Increments the transfer counter for a bounded terminal outcome. */
     private void transfer(String outcome) {
         meterRegistry.counter("transfers_total", "outcome", outcome).increment();
+    }
+
+    /** Increments the reversal counter for a bounded terminal outcome. */
+    private void reversal(String outcome) {
+        meterRegistry.counter("reversals_total", "outcome", outcome).increment();
     }
 
     /** Writes a structured business event; the correlation ID is supplied by MDC configuration. */
